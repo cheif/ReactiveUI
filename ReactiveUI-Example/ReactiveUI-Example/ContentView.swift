@@ -21,20 +21,22 @@ extension DataState {
         case .loading:
             return AnyView(Text("Loading..."))
         case .data(let items):
-            return AnyView(List {
-                ForEach(items) { item in
-                    ReactiveView(source: dataSource.getName(for: item)) { name in
-                        NavigationLink(destination: item.detailView(with: dataSource)) {
-                            Text(name)
-                        }
-                    }
-                }
-            })
+            return AnyView(
+                List(items) { item in item.rowView(with: dataSource) }
+            )
         }
     }
 }
 
 extension Item {
+    func rowView(with dataSource: DataSource) -> some View {
+        dataSource.getName(for: self).view {  name in
+            NavigationLink(destination: self.detailView(with: dataSource)) {
+                Text(name)
+            }
+        }
+    }
+
     func detailView(with dataSource: DataSource) -> some View {
         let image = dataSource.getImage(for: self).map { $0 as UIImage? }.prepend(nil)
         let description = dataSource.getDescription(for: self).map { $0 as String? }.prepend(nil)
@@ -63,9 +65,11 @@ protocol DataSource {
 
 struct MockSource: DataSource {
     func getItems() -> AnyPublisher<DataState, Never> {
-        return Just(.data((0...15).map(Item.init)))
-            .delay(for: .seconds(2.0), scheduler: RunLoop.main)
-            .eraseToAnyPublisher()
+        // emit [0], [0, 1] ... [0, ..., 20] with 150ms delay
+        return (0...20)
+            .map { no in Just(Array((0...no))).delay(for: .seconds(1) + .milliseconds(no * 150), scheduler: RunLoop.main).eraseToAnyPublisher() }
+            .reduce(Just([0]).eraseToAnyPublisher(), { $0.merge(with: $1).eraseToAnyPublisher() })
+            .map { .data($0.map(Item.init)) }
             .merge(with: Just(.loading).eraseToAnyPublisher())
             .eraseToAnyPublisher()
     }
